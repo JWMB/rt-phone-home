@@ -21,10 +21,13 @@ namespace rt_call_home
 
 		public int Total => counts.Sum(o => o.Value);
 
-		public decimal GetFractionSuccess() =>
-			counts.Any()
-			? (decimal)counts.Where(kv => IsSuccessStatusCode(kv.Key)).Sum(o => o.Value) / Total
-			: 1;
+		public decimal GetFractionSuccess()
+        {
+			var notInterrupted = counts.Where(o => o.Key != HttpStatusCode.GatewayTimeout).ToList();
+			return notInterrupted.Any()
+				? (decimal)notInterrupted.Where(kv => IsSuccessStatusCode(kv.Key)).Sum(o => o.Value) / notInterrupted.Sum(o => o.Value)
+				: 1;
+		}
 
 		public decimal GetLatestFractionSuccess() => 
 			latestAwaitedResponse.Any()

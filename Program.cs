@@ -20,7 +20,7 @@ await Parallel.ForEachAsync(UrlGenerator(), new ParallelOptions { MaxDegreeOfPar
 
 	// Every now and then, let request run a bit longer to see if there's a response (so we can decrease intensity of unreachable URLs)
 	var totalCallsToUri = results!.GetValueOrDefault(url, null)?.Total ?? 0;
-	var waitForResponse = totalCallsToUri % 5 == 0;
+	var waitForResponse = totalCallsToUri % 25 == 0;
     var timeout = waitForResponse ? (TimeSpan?)null : TimeSpan.FromSeconds(0.1);
 
     var info = await MakeRequest(url, timeout);
@@ -97,7 +97,7 @@ async Task<(HttpStatusCode, string)> MakeRequest(Uri url, TimeSpan? timeout = nu
 			cancelSource.CancelAfter((int)timeout.Value.TotalMilliseconds);
 
 		HttpResponseMessage response;
-		if (true) // for testing
+		if (false) // for testing
         {
 			var delay = new Random((int)DateTime.Now.Ticks).NextDouble() * 500;
 			try
@@ -112,8 +112,10 @@ async Task<(HttpStatusCode, string)> MakeRequest(Uri url, TimeSpan? timeout = nu
 
 		return (response.StatusCode, $"server={response.Headers.GetValuesOrNull("server")?.FirstOrDefault() ?? "N/A"}");
 	}
-	catch (TaskCanceledException)
+	catch (TaskCanceledException tcEx)
 	{
+		if (timeout.HasValue)
+			return (HttpStatusCode.GatewayTimeout, $"Timeout"); // TÓDO: placeholder for signifying forced timeout (we should use something other than HttpStatusCode:s)
 		return (HttpStatusCode.RequestTimeout, $"Timeout");
 	}
 	catch (OperationCanceledException ocEx)

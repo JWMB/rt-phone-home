@@ -63,9 +63,7 @@
 		public List<Uri> Urls => FileUrlProvider.Parse(Content);
 		private string Content =
 	@"
-// https://rt.com
-https://sweden.mid.ru/documents/19711091/0/fon.jpg
-// https://kremlin.ru
+https://someurl.com
 ";
 		public void Dispose() { }
 	}
