@@ -37,7 +37,10 @@ void UpdateStats(Uri url, HttpStatusCode statusCode, string info)
 	Interlocked.Increment(ref totalCnt);
 	if (totalCnt % 50 == 0)
 	{
-		var stats = string.Join("\n", results.Select(o => $"{(int)(o.Value.GetFractionSuccess() * 100)}% ({o.Value.Total}) - {o.Key.Host}"));
+		var stats = string.Join("\n",
+			results.Select(o => new { Uri = o.Key, SuccessRate = o.Value.GetFractionSuccess(), Stats = o.Value })
+			.OrderByDescending(o => o.SuccessRate)
+			.Select(o => $"{(int)(o.SuccessRate * 100)}% ({o.Stats.Total}) - {o.Uri.Host}"));
 		Console.WriteLine($"---{totalCnt}---\n{stats}");
 
 		var forSerialization = results.ToDictionary(o => o.Key.ToString(), o => o.Value);
@@ -60,8 +63,22 @@ async Task<(HttpStatusCode, string)> MakeRequest(Uri url)
 	{
 		return (HttpStatusCode.RequestTimeout, $"Timeout");
 	}
+	catch (OperationCanceledException ocEx)
+    {
+		return (HttpStatusCode.InsufficientStorage, $"{ocEx.GetType().Name}: {ocEx.Message}");
+	}
+	catch (HttpRequestException hEx)
+    {
+		if (hEx.HResult == -2147467259) // A connection attempt failed because the connected party did not properly respond after a period of time, or...
+			return (HttpStatusCode.RequestTimeout, $"{hEx.GetType().Name}: {hEx.Message}");
+		if (hEx.HResult == -2146232800) // SSL fail or An error occurred while sending the request
+			return (HttpStatusCode.BadGateway, $"{hEx.GetType().Name}: {hEx.Message}");
+		Console.WriteLine($"{url} {hEx.StatusCode} / {hEx.HResult} {hEx.Message}");
+		return (HttpStatusCode.InsufficientStorage, $"{hEx.GetType().Name}: {hEx.Message}");
+	}
 	catch (Exception ex)
 	{
+		Console.WriteLine($"{url} {ex.GetType().Name}: {ex.Message}");
 		return (HttpStatusCode.InsufficientStorage, $"{ex.GetType().Name}: {ex.Message}");
 	}
 }

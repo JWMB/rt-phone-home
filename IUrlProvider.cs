@@ -35,11 +35,11 @@
 				{
 					lock (lockObject)
 					{
-						Console.WriteLine($"Changes detected in {fileInfo.Name}");
 						reloadUrls = false;
 						urls = fileInfo.Exists
 							? Parse(File.ReadAllText(fileInfo.FullName))
 							: new List<Uri>();
+						Console.WriteLine($"Changes detected in {fileInfo.Name} - {urls.Count} urls");
 					}
 				}
 				return urls;
