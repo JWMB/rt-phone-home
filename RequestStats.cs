@@ -7,14 +7,29 @@ namespace rt_call_home
 	public record RequestStats
 	{
 		private Dictionary<HttpStatusCode, int> counts = new Dictionary<HttpStatusCode, int>();
-		public void Add(HttpStatusCode code, string message)
+		private Queue<HttpStatusCode> latestAwaitedResponse = new Queue<HttpStatusCode>(Enumerable.Repeat(HttpStatusCode.OK, 4));
+
+		public void Add(HttpStatusCode code, string message, bool awaitedResponse)
 		{
 			counts[code] = counts.TryGetValue(code, out int count) ? count + 1 : 1;
+			if (awaitedResponse)
+            {
+				latestAwaitedResponse.Enqueue(code);
+				latestAwaitedResponse.Dequeue();
+			}
 		}
 
 		public int Total => counts.Sum(o => o.Value);
 
-		public decimal GetFractionSuccess() => (decimal)counts.Where(kv => IsSuccessStatusCode(kv.Key)).Sum(o => o.Value) / Total;
+		public decimal GetFractionSuccess() =>
+			counts.Any()
+			? (decimal)counts.Where(kv => IsSuccessStatusCode(kv.Key)).Sum(o => o.Value) / Total
+			: 1;
+
+		public decimal GetLatestFractionSuccess() => 
+			latestAwaitedResponse.Any()
+			? (decimal)latestAwaitedResponse.Count(code => IsSuccessStatusCode(code)) / latestAwaitedResponse.Count()
+			: 1;
 
 		private static bool IsSuccessStatusCode(HttpStatusCode statusCode) =>
 			((int)statusCode >= 200) && ((int)statusCode <= 299);
