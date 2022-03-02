@@ -47,7 +47,7 @@ void UpdateStats(Uri url, IRequestResult requestResult)
     {
 		lock (lockResults)
         {
-			probabilities = results.ToDictionary(kv => kv.Key, kv => kv.Value.GetLatestFractionSuccess() + 0.2M);
+			probabilities = results.ToDictionary(kv => kv.Key, kv => kv.Value.GetLatestFractionSuccess() + 0.1M);
 		}
 	}
 
