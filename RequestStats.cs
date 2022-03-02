@@ -6,16 +6,29 @@ namespace rt_call_home
 {
 	public record RequestStats
 	{
-		private Dictionary<HttpStatusCode, int> counts = new Dictionary<HttpStatusCode, int>();
-		private Queue<HttpStatusCode> latestAwaitedResponse = new Queue<HttpStatusCode>(Enumerable.Repeat(HttpStatusCode.OK, 4));
+		public enum ResultCategory
+        {
+			Success,
+			Failure,
+			Canceled
+        }
 
-		public void Add(HttpStatusCode code, string message, bool awaitedResponse)
+		//private Dictionary<string, int> counts = new Dictionary<string, int>();
+		private Dictionary<ResultCategory, int> counts = new Dictionary<ResultCategory, int>();
+		private Queue<IRequestResult> latestAwaitedResponse = new Queue<IRequestResult>();
+
+		public void Add(IRequestResult requestResult)
 		{
-			counts[code] = counts.TryGetValue(code, out int count) ? count + 1 : 1;
-			if (awaitedResponse)
+			var cat = requestResult is RequestResultCanceled ? ResultCategory.Canceled
+				: (requestResult is RequestResultResponse rr && IsSuccessStatusCode(rr.StatusCode) ? ResultCategory.Success : ResultCategory.Failure);
+
+			counts[cat] = counts.TryGetValue(cat, out int count) ? count + 1 : 1;
+
+			if (requestResult is not RequestResultCanceled)
             {
-				latestAwaitedResponse.Enqueue(code);
-				latestAwaitedResponse.Dequeue();
+				latestAwaitedResponse.Enqueue(requestResult);
+				if (latestAwaitedResponse.Count > 4)
+					latestAwaitedResponse.Dequeue();
 			}
 		}
 
@@ -23,15 +36,15 @@ namespace rt_call_home
 
 		public decimal GetFractionSuccess()
         {
-			var notInterrupted = counts.Where(o => o.Key != HttpStatusCode.GatewayTimeout).ToList();
+			var notInterrupted = counts.Where(o => o.Key != ResultCategory.Canceled).ToList();
 			return notInterrupted.Any()
-				? (decimal)notInterrupted.Where(kv => IsSuccessStatusCode(kv.Key)).Sum(o => o.Value) / notInterrupted.Sum(o => o.Value)
+				? (decimal)notInterrupted.Where(kv => kv.Key == ResultCategory.Success).Sum(o => o.Value) / notInterrupted.Sum(o => o.Value)
 				: 1;
 		}
 
 		public decimal GetLatestFractionSuccess() => 
 			latestAwaitedResponse.Any()
-			? (decimal)latestAwaitedResponse.Count(code => IsSuccessStatusCode(code)) / latestAwaitedResponse.Count()
+			? (decimal)latestAwaitedResponse.Count(r => r is RequestResultResponse resp && IsSuccessStatusCode(resp.StatusCode)) / latestAwaitedResponse.Count()
 			: 1;
 
 		private static bool IsSuccessStatusCode(HttpStatusCode statusCode) =>
@@ -51,4 +64,39 @@ namespace rt_call_home
 			}
 		}
 	}
+
+
+	public interface IRequestResult
+	{
+		string GetKey();
+	}
+
+	public record RequestResultResponse : IRequestResult
+	{
+		public HttpStatusCode StatusCode { get; set; }
+
+		public RequestResultResponse(HttpStatusCode statusCode)
+		{
+			StatusCode = statusCode;
+		}
+
+		public string GetKey() => $"{(int)StatusCode}";
+	}
+
+	public record RequestResultCanceled : IRequestResult
+	{
+		public string GetKey() => "Canceled";
+	}
+
+	public record RequestResultException : IRequestResult
+	{
+		public Exception Exception { get; set; }
+
+        public RequestResultException(Exception exception)
+        {
+			Exception = exception;
+        }
+
+		public string GetKey() => Exception.GetType().Name;
+    }
 }

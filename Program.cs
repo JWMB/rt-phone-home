@@ -23,12 +23,12 @@ await Parallel.ForEachAsync(UrlGenerator(), new ParallelOptions { MaxDegreeOfPar
 	var waitForResponse = totalCallsToUri % 25 == 0;
     var timeout = waitForResponse ? (TimeSpan?)null : TimeSpan.FromSeconds(0.1);
 
-    var info = await MakeRequest(url, timeout);
+    var result = await MakeRequest(url, timeout);
 
-	UpdateStats(url, info.Item1, info.Item2, waitForResponse);
+	UpdateStats(url, result);
 });
 
-void UpdateStats(Uri url, HttpStatusCode statusCode, string info, bool awaitedResponse)
+void UpdateStats(Uri url, IRequestResult requestResult)
 {
 	lock (lockResults)
     {
@@ -39,11 +39,11 @@ void UpdateStats(Uri url, HttpStatusCode statusCode, string info, bool awaitedRe
 
 	RequestStats Add(RequestStats stats)
     {
-		stats.Add(statusCode, info, awaitedResponse);
+		stats.Add(requestResult);
 		return stats;
 	}
 
-	if (awaitedResponse)
+	if (!(requestResult is RequestResultCanceled))
     {
 		lock (lockResults)
         {
@@ -88,7 +88,7 @@ void SaveResults()
 	}
 }
 
-async Task<(HttpStatusCode, string)> MakeRequest(Uri url, TimeSpan? timeout = null)
+async Task<IRequestResult> MakeRequest(Uri url, TimeSpan? timeout = null)
 {
 	try
 	{
@@ -110,31 +110,29 @@ async Task<(HttpStatusCode, string)> MakeRequest(Uri url, TimeSpan? timeout = nu
 		else
 			response = await client.GetAsync(url, cancelSource.Token);
 
-		return (response.StatusCode, $"server={response.Headers.GetValuesOrNull("server")?.FirstOrDefault() ?? "N/A"}");
+		return new RequestResultResponse(response.StatusCode); // Message = $"server={response.Headers.GetValuesOrNull("server")?.FirstOrDefault() ?? "N/A"}" };
 	}
 	catch (TaskCanceledException tcEx)
 	{
 		if (timeout.HasValue)
-			return (HttpStatusCode.GatewayTimeout, $"Timeout"); // TÓDO: placeholder for signifying forced timeout (we should use something other than HttpStatusCode:s)
-		return (HttpStatusCode.RequestTimeout, $"Timeout");
+			return new RequestResultCanceled(); // Exception = tcEx, Message = $"Timeout", Canceled = true };
+		return new RequestResultException(tcEx);
 	}
 	catch (OperationCanceledException ocEx)
     {
-		return (HttpStatusCode.InsufficientStorage, $"{ocEx.GetType().Name}: {ocEx.Message}");
+		return new RequestResultException(ocEx);
 	}
 	catch (HttpRequestException hEx)
     {
-		if (hEx.HResult == -2147467259) // A connection attempt failed because the connected party did not properly respond after a period of time, or...
-			return (HttpStatusCode.RequestTimeout, $"{hEx.GetType().Name}: {hEx.Message}");
-		if (hEx.HResult == -2146232800) // SSL fail or An error occurred while sending the request
-			return (HttpStatusCode.BadGateway, $"{hEx.GetType().Name}: {hEx.Message}");
-		Console.WriteLine($"{url} {hEx.StatusCode} / {hEx.HResult} {hEx.Message}");
-		return (HttpStatusCode.InsufficientStorage, $"{hEx.GetType().Name}: {hEx.Message}");
+		if (hEx.HResult != -2147467259 // A connection attempt failed because the connected party did not properly respond after a period of time, or...
+			&& hEx.HResult == -2146232800) // SSL fail or An error occurred while sending the request
+			Console.WriteLine($"{url} {hEx.StatusCode} / {hEx.HResult} {hEx.Message}");
+		return new RequestResultException(hEx);
 	}
 	catch (Exception ex)
 	{
 		Console.WriteLine($"{url} {ex.GetType().Name}: {ex.Message}");
-		return (HttpStatusCode.InsufficientStorage, $"{ex.GetType().Name}: {ex.Message}");
+		return new RequestResultException(ex);
 	}
 }
 
