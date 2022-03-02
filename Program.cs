@@ -8,6 +8,10 @@ using IUrlProvider urlProvider = new FileUrlProvider("urls.txt");
 var client = new HttpClient();
 client.Timeout = TimeSpan.FromSeconds(2);
 
+var ipGuard = new IPGuard(client);
+ipGuard.Allowed.Add(await ipGuard.Fetch());
+Console.WriteLine($"Current IP:{ipGuard.CurrentIP}");
+
 var results = new ConcurrentDictionary<Uri, RequestStats>();
 var probabilities = new Dictionary<Uri, decimal>();
 var totalCnt = 0;
@@ -23,7 +27,17 @@ await Parallel.ForEachAsync(UrlGenerator(), new ParallelOptions { MaxDegreeOfPar
 	var waitForResponse = totalCallsToUri % 25 == 0;
     var timeout = waitForResponse ? (TimeSpan?)null : TimeSpan.FromSeconds(0.1);
 
-    var result = await MakeRequest(url, timeout);
+	if (totalCnt % 500 == 1)
+    {
+		if (await ipGuard.Check() == false)
+        {
+			Console.WriteLine($"IP guard triggered {ipGuard.CurrentIP}");
+        }
+	}
+	if (!ipGuard.CurrentIPAllowed)
+		return;
+
+	var result = await MakeRequest(url, timeout);
 
 	UpdateStats(url, result);
 });
@@ -97,7 +111,7 @@ async Task<IRequestResult> MakeRequest(Uri url, TimeSpan? timeout = null)
 			cancelSource.CancelAfter((int)timeout.Value.TotalMilliseconds);
 
 		HttpResponseMessage response;
-		if (false) // for testing
+		if (true) // for testing
         {
 			var delay = new Random((int)DateTime.Now.Ticks).NextDouble() * 500;
 			try
