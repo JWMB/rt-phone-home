@@ -6,7 +6,6 @@ using System.Text.Json;
 using IUrlProvider urlProvider = new FileUrlProvider("urls.txt");
 
 var client = new HttpClient();
-client.Timeout = TimeSpan.FromSeconds(2);
 
 var ipGuard = new IPGuard(client);
 ipGuard.Allowed.Add(await ipGuard.Fetch());
@@ -25,9 +24,9 @@ await Parallel.ForEachAsync(UrlGenerator(), new ParallelOptions { MaxDegreeOfPar
 	// Every now and then, let request run a bit longer to see if there's a response (so we can decrease intensity of unreachable URLs)
 	var totalCallsToUri = results!.GetValueOrDefault(url, null)?.Total ?? 0;
 	var waitForResponse = totalCallsToUri % 25 == 0;
-    var timeout = waitForResponse ? (TimeSpan?)null : TimeSpan.FromSeconds(0.1);
+    var timeout = waitForResponse ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(0.1);
 
-	if (totalCnt % 500 == 1)
+	if (totalCnt % 2000 == 1)
     {
 		if (await ipGuard.Check() == false)
         {
@@ -37,7 +36,7 @@ await Parallel.ForEachAsync(UrlGenerator(), new ParallelOptions { MaxDegreeOfPar
 	if (!ipGuard.CurrentIPAllowed)
 		return;
 
-	var result = await MakeRequest(url, timeout);
+	var result = await MakeRequest(url, timeout, waitForResponse);
 
 	UpdateStats(url, result);
 });
@@ -102,7 +101,7 @@ void SaveResults()
 	}
 }
 
-async Task<IRequestResult> MakeRequest(Uri url, TimeSpan? timeout = null)
+async Task<IRequestResult> MakeRequest(Uri url, TimeSpan? timeout = null, bool longTimeout = true)
 {
 	try
 	{
@@ -128,9 +127,7 @@ async Task<IRequestResult> MakeRequest(Uri url, TimeSpan? timeout = null)
 	}
 	catch (TaskCanceledException tcEx)
 	{
-		if (timeout.HasValue)
-			return new RequestResultCanceled(); // Exception = tcEx, Message = $"Timeout", Canceled = true };
-		return new RequestResultException(tcEx);
+		return longTimeout ? new RequestResultException(tcEx) : new RequestResultCanceled();
 	}
 	catch (OperationCanceledException ocEx)
     {
